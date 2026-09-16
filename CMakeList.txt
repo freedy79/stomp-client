@@ -1,0 +1,39 @@
+cmake_minimum_required(VERSION 3.20)
+project(stomp_client VERSION 1.0.0 LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+# Export compile commands for IDE integration
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+# Library definition
+add_library(stomp_client STATIC
+    src/StompFrame.cpp
+    src/StompParser.cpp
+    src/StompClient.cpp
+    src/CurlTransport.cpp
+)
+
+target_include_directories(stomp_client
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include>
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+
+# Dependencies (libcurl)
+find_package(CURL REQUIRED)
+target_link_libraries(stomp_client
+    PUBLIC
+        CURL::libcurl
+)
+
+# Optional Unit Testing
+if(BUILD_TESTING OR CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
+    enable_testing()
+    add_subdirectory(test)
+    add_subdirectory(examples)
+endif()
