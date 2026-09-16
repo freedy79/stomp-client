@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 freedy79
+
 #include "stomp/StompClient.h"
 #include "stomp/StompFrame.h"
 #include "stomp/StompParser.h"
@@ -5,7 +8,10 @@
 
 #include <cassert>
 #include <iostream>
+#include <string>
 #include <vector>
+
+using namespace std::string_literals;
 
 // Mock transport for isolated unit testing
 class MockTransport : public Stomp::ITransport
@@ -118,11 +124,11 @@ void testClientEventHooks()
     std::string subId = client.subscribe("/topic/commands", [&](const Stomp::Message& msg) {
         messageReceived = true;
         assert(msg.destination == "/topic/commands");
-        assert(msg.body == "{\"command\": \"tare\"}");
+        assert(msg.body == "{\"command\": \"start\"}");
     });
 
-    // Simulate incoming MESSAGE frame from Cloud
-    std::string incomingMsg = "MESSAGE\ndestination:/topic/commands\nsubscription:" + subId + "\nmessage-id:001\n\n{\"command\": \"tare\"}\0"s;
+    // Simulate incoming MESSAGE frame from the broker
+    std::string incomingMsg = "MESSAGE\ndestination:/topic/commands\nsubscription:" + subId + "\nmessage-id:001\n\n{\"command\": \"start\"}\0"s;
     mock->injectIncoming(incomingMsg);
     assert(messageReceived);
 
@@ -136,7 +142,6 @@ void testClientEventHooks()
 
 int main()
 {
-    using namespace std::string_literals;
     testFrameSerialization();
     testParserSimpleFrame();
     testClientEventHooks();

@@ -1,0 +1,34 @@
+stomp-client
+https://github.com/freedy79/stomp-client
+Copyright (c) 2026 freedy79
+
+This product is licensed under the MIT License. See the LICENSE file for the
+full license text.
+
+--------------------------------------------------------------------------------
+Third-party components
+--------------------------------------------------------------------------------
+
+This library links against, but does not include, the following components.
+Their licenses apply to those components only.
+
+1. libcurl
+   Homepage: https://curl.se/libcurl/
+   License:  curl license (MIT/X derivate)
+   Copyright (c) 1996 - 2026, Daniel Stenberg, <daniel@haxx.se>, and many
+   contributors.
+
+2. nlohmann/json  (optional, enabled via STOMP_WITH_JSON)
+   Homepage: https://github.com/nlohmann/json
+   License:  MIT License
+   Copyright (c) 2013-2026 Niels Lohmann
+
+--------------------------------------------------------------------------------
+Standards and acknowledgements
+--------------------------------------------------------------------------------
+
+* The wire protocol implementation follows the STOMP 1.2 specification
+  (https://stomp.github.io/stomp-specification-1.2.html).
+* The WebSocket transport follows RFC 6455.
+* The public client interface was inspired by the command line client
+  https://github.com/amirabiri/stomp-cli. No source code was copied from it.

@@ -1,6 +1,8 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 freedy79
+
 #include "stomp/StompClient.h"
 
-#include <format>
 #include <iostream>
 
 namespace Stomp
@@ -72,7 +74,7 @@ bool StompClient::connect(const ClientConfig& config)
     }
 
     // Heartbeat: cx,cy
-    std::string hb = std::format("{},{}", m_config.heartbeatOutgoing.count(), m_config.heartbeatIncoming.count());
+    std::string hb = std::to_string(m_config.heartbeatOutgoing.count()) + "," + std::to_string(m_config.heartbeatIncoming.count());
     connectFrame.setHeader(std::string(Header::HEARTBEAT), hb);
 
     std::string serialized = connectFrame.serialize();

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 freedy79
+
 #pragma once
 
 #include <cstdint>

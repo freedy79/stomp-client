@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 freedy79
+
 #include "stomp/StompParser.h"
 
 #include <charconv>
