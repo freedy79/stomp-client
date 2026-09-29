@@ -5,6 +5,8 @@
 
 #include <chrono>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace Stomp
 {
@@ -34,6 +36,10 @@ struct TransportConfig
 
     /// Proxy URL, e.g. "http://proxy.example.com:3128". Empty means no proxy.
     std::string proxy;
+
+    /// Extra headers for the HTTP upgrade request, e.g. an authorization header
+    /// for servers that bind the session principal during the handshake.
+    std::vector<std::pair<std::string, std::string>> handshakeHeaders;
 
     std::chrono::milliseconds connectTimeout{10000};
 

@@ -77,6 +77,11 @@ bool StompClient::connect(const ClientConfig& config)
     std::string hb = std::to_string(m_config.heartbeatOutgoing.count()) + "," + std::to_string(m_config.heartbeatIncoming.count());
     connectFrame.setHeader(std::string(Header::HEARTBEAT), hb);
 
+    for (const auto& [key, value] : m_config.extraHeaders)
+    {
+        connectFrame.setHeader(key, value);
+    }
+
     std::string serialized = connectFrame.serialize();
     return m_transport->send(serialized);
 }

@@ -88,6 +88,16 @@ std::string base64Encode(const uint8_t* data, size_t len)
     }
     return res;
 }
+
+std::string extraHandshakeHeaders(const std::vector<std::pair<std::string, std::string>>& headers)
+{
+    std::string out;
+    for (const auto& [key, value] : headers)
+    {
+        out += key + ": " + value + "\r\n";
+    }
+    return out;
+}
 } // namespace
 
 // -----------------------------------------------------------------------------
@@ -140,6 +150,12 @@ std::array<uint8_t, 4> CurlTransport::nextMaskKey()
             static_cast<uint8_t>(dist(m_rng))};
 }
 
+int CurlTransport::onCurlProgress(void* userData, curl_off_t, curl_off_t, curl_off_t, curl_off_t)
+{
+    auto* self = static_cast<CurlTransport*>(userData);
+    return (self != nullptr && self->m_cancelRequested.load()) ? 1 : 0;
+}
+
 bool CurlTransport::applyCurlOptions(const std::string& effectiveUrl)
 {
     curl_easy_setopt(m_curl, CURLOPT_URL, effectiveUrl.c_str());
@@ -178,6 +194,11 @@ bool CurlTransport::applyCurlOptions(const std::string& effectiveUrl)
 
     curl_easy_setopt(m_curl, CURLOPT_CONNECTTIMEOUT_MS, static_cast<long>(m_config.connectTimeout.count()));
 
+    // Lets close() abort a connect that is still blocked inside curl_easy_perform().
+    curl_easy_setopt(m_curl, CURLOPT_NOPROGRESS, 0L);
+    curl_easy_setopt(m_curl, CURLOPT_XFERINFOFUNCTION, &CurlTransport::onCurlProgress);
+    curl_easy_setopt(m_curl, CURLOPT_XFERINFODATA, this);
+
     if (m_config.tcpKeepAlive)
     {
         curl_easy_setopt(m_curl, CURLOPT_TCP_KEEPALIVE, 1L);
@@ -193,9 +214,20 @@ bool CurlTransport::applyCurlOptions(const std::string& effectiveUrl)
 #ifdef STOMP_CURL_NATIVE_WS
     // libcurl performs the upgrade handshake, framing, masking and PING/PONG replies.
     curl_easy_setopt(m_curl, CURLOPT_CONNECT_ONLY, 2L);
+
+    for (const auto& [key, value] : m_config.handshakeHeaders)
+    {
+        m_headerList = curl_slist_append(m_headerList, (key + ": " + value).c_str());
+    }
+    if (m_headerList)
+    {
+        curl_easy_setopt(m_curl, CURLOPT_HTTPHEADER, m_headerList);
+    }
 #else
     // Older libcurl: use the established (TLS) connection as a raw tunnel.
     curl_easy_setopt(m_curl, CURLOPT_CONNECT_ONLY, 1L);
+    // The handshake below is HTTP/1.1, so ALPN must not negotiate h2.
+    curl_easy_setopt(m_curl, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
 #endif
 
     return true;
@@ -203,7 +235,9 @@ bool CurlTransport::applyCurlOptions(const std::string& effectiveUrl)
 
 bool CurlTransport::open(std::string_view url)
 {
-    close();
+    std::lock_guard<std::mutex> lifecycleLock(m_lifecycleMutex);
+    closeLocked();
+    m_cancelRequested.store(false);
 
     m_url = std::string(url);
 
@@ -222,18 +256,26 @@ bool CurlTransport::open(std::string_view url)
                                      std::to_string(parsed.port) + parsed.path;
 #endif
 
-    m_curl = curl_easy_init();
-    if (!m_curl)
+    CURL* handle = curl_easy_init();
+    if (!handle)
     {
         reportError("curl_easy_init() failed");
         return false;
+    }
+    {
+        std::lock_guard<std::mutex> lock(m_curlMutex);
+        m_curl = handle;
     }
 
     applyCurlOptions(effectiveUrl);
 
     if (const CURLcode res = curl_easy_perform(m_curl); res != CURLE_OK)
     {
-        reportError(std::string("Connection failed: ") + curl_easy_strerror(res));
+        if (res != CURLE_ABORTED_BY_CALLBACK)
+        {
+            reportError(std::string("Connection failed: ") + curl_easy_strerror(res));
+        }
+        std::lock_guard<std::mutex> lock(m_curlMutex);
         teardown();
         return false;
     }
@@ -241,6 +283,7 @@ bool CurlTransport::open(std::string_view url)
 #ifndef STOMP_CURL_NATIVE_WS
     if (!performWsHandshake(parsed.host, parsed.port, parsed.path))
     {
+        std::lock_guard<std::mutex> lock(m_curlMutex);
         teardown();
         return false;
     }
@@ -258,6 +301,12 @@ void CurlTransport::teardown()
     {
         curl_easy_cleanup(m_curl);
         m_curl = nullptr;
+    }
+
+    if (m_headerList)
+    {
+        curl_slist_free_all(m_headerList);
+        m_headerList = nullptr;
     }
 }
 
@@ -298,6 +347,17 @@ void CurlTransport::sendCloseFrame()
 }
 
 void CurlTransport::close()
+{
+    // Signalled before taking the lifecycle lock so a connect that is still
+    // running inside curl_easy_perform() bails out instead of making this call
+    // wait for the full connect timeout.
+    m_cancelRequested.store(true);
+
+    std::lock_guard<std::mutex> lifecycleLock(m_lifecycleMutex);
+    closeLocked();
+}
+
+void CurlTransport::closeLocked()
 {
     if (m_connected.exchange(false))
     {
@@ -457,7 +517,8 @@ bool CurlTransport::performWsHandshake(const std::string& host, int port, const 
         "Upgrade: websocket\r\n"
         "Connection: Upgrade\r\n"
         "Sec-WebSocket-Key: " + base64Encode(keyBytes, sizeof(keyBytes)) + "\r\n"
-        "Sec-WebSocket-Version: 13\r\n"
+        "Sec-WebSocket-Version: 13\r\n" +
+        extraHandshakeHeaders(m_config.handshakeHeaders) +
         "\r\n";
 
     if (!tunnelWrite(request.data(), request.size()))
@@ -468,13 +529,18 @@ bool CurlTransport::performWsHandshake(const std::string& host, int port, const 
 
     std::string response;
     char buf[512];
+    const auto deadline = std::chrono::steady_clock::now() + m_config.connectTimeout;
     while (response.find("\r\n\r\n") == std::string::npos)
     {
-        if (!waitReadable(static_cast<int>(m_config.connectTimeout.count())))
+        if (std::chrono::steady_clock::now() >= deadline)
         {
             reportError("Timeout while waiting for WebSocket upgrade response");
             return false;
         }
+
+        // The response may already sit in the TLS layer's buffer, so poll() is
+        // only used as a sleep: the read is attempted in either case.
+        waitReadable(100);
 
         size_t got = 0;
         CURLcode res = CURLE_OK;
@@ -598,10 +664,9 @@ void CurlTransport::workerLoop()
 
     while (m_running.load())
     {
-        if (!waitReadable(200))
-        {
-            continue;
-        }
+        // Used as a sleep only: decrypted bytes can already be buffered inside
+        // the TLS layer while the socket itself reports nothing to read.
+        waitReadable(200);
 
 #ifdef STOMP_CURL_NATIVE_WS
         size_t received = 0;
