@@ -54,9 +54,13 @@ private:
     bool applyCurlOptions(const std::string& effectiveUrl);
     void reportError(std::string_view message);
     void teardown();
+    void closeLocked();
     bool waitReadable(int timeoutMs);
     void sendCloseFrame();
     void workerLoop();
+
+    /// @brief libcurl progress hook, aborts a transfer once close() was requested.
+    static int onCurlProgress(void* userData, curl_off_t, curl_off_t, curl_off_t, curl_off_t);
 
     // Only used when libcurl has no native WebSocket support.
     bool tunnelWrite(const void* data, size_t len);
@@ -66,12 +70,16 @@ private:
 
     TransportConfig m_config;
     CURL* m_curl{nullptr};
+    curl_slist* m_headerList{nullptr};
     std::string m_url;
 
     std::atomic<bool> m_running{false};
     std::atomic<bool> m_connected{false};
+    std::atomic<bool> m_cancelRequested{false};
     std::thread m_workerThread;
     std::mutex m_curlMutex;
+    /// Serializes open() against close() so the handle is never freed in use.
+    std::mutex m_lifecycleMutex;
     std::mt19937 m_rng{std::random_device{}()};
 
     std::function<void(std::span<const uint8_t>)> m_onData;

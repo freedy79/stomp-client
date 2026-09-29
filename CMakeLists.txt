@@ -27,12 +27,14 @@ target_include_directories(stomp_client
         ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-# Dependencies (libcurl)
-find_package(CURL REQUIRED)
-target_link_libraries(stomp_client
-    PUBLIC
-        CURL::libcurl
-)
+# Dependencies (libcurl). Embedded toolchains often ship libcurl without a CMake
+# config package, so fall back to the plain library name.
+find_package(CURL QUIET)
+if(TARGET CURL::libcurl)
+    target_link_libraries(stomp_client PUBLIC CURL::libcurl)
+else()
+    target_link_libraries(stomp_client PUBLIC curl)
+endif()
 
 # Optional JSON support for the application layer. The STOMP core itself stays
 # payload agnostic; only helpers and examples use nlohmann/json.
@@ -60,8 +62,15 @@ if(STOMP_WITH_JSON)
     target_compile_definitions(stomp_client PUBLIC STOMP_WITH_JSON)
 endif()
 
-# Optional Unit Testing
-if(BUILD_TESTING OR CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
+# Tests and examples are only of interest for the standalone build; when embedded
+# into a larger project they would collide with its own test registration.
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    option(STOMP_BUILD_TESTS "Build unit tests and examples" ON)
+else()
+    option(STOMP_BUILD_TESTS "Build unit tests and examples" OFF)
+endif()
+
+if(STOMP_BUILD_TESTS)
     enable_testing()
     add_subdirectory(test)
     add_subdirectory(examples)

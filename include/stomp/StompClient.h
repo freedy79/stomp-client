@@ -28,6 +28,7 @@ struct ClientConfig
     std::string acceptVersion = "1.0,1.1,1.2";   // supported versions
     std::chrono::milliseconds heartbeatOutgoing{10000};
     std::chrono::milliseconds heartbeatIncoming{10000};
+    Headers extraHeaders;                        // additional CONNECT headers, e.g. bearer tokens
 };
 
 struct Message

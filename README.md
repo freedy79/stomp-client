@@ -24,6 +24,9 @@ Framing depends on the linked libcurl version and is selected at compile time:
 | older | `CURLOPT_CONNECT_ONLY = 1` (raw TLS tunnel) | done by this library |
 
 Use `CurlTransport::hasNativeWebSocketSupport()` to query which mode is active.
+In the fallback mode the upgrade request is written by this library, so ALPN is pinned to
+`http/1.1` and the response is read until it is complete, even when it already sits in the
+TLS layer's buffer.
 
 ## Secure connections (`wss://`)
 
@@ -43,6 +46,23 @@ cfg.tcpKeepAlive = true;                   // survive NAT / load balancer idle t
 
 auto transport = std::make_shared<Stomp::CurlTransport>(cfg);
 Stomp::StompClient client(transport);
+```
+
+## Authentication
+
+Credentials are sent as additional `CONNECT` headers:
+
+```cpp
+Stomp::ClientConfig config;
+config.url = "wss://example.com/stomp/websocket";
+config.extraHeaders.emplace_back("Authorization", "Bearer " + token);
+```
+
+Servers that bind the session principal during the HTTP upgrade instead expect the headers on
+the handshake itself:
+
+```cpp
+cfg.handshakeHeaders.emplace_back("Authorization", "Bearer " + token);
 ```
 
 ## Prerequisites
